@@ -37,6 +37,15 @@ pub enum Operator {
     GREATER,
 }
 
+impl<'a> Token<'a> {
+    pub fn to_operator(&self) -> Operator {
+        match self {
+            Token::OPERATOR(op) => op.clone(),
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Tokens<'a> {
     pub tok: &'a [Token<'a>],

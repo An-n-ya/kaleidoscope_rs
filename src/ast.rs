@@ -1,4 +1,4 @@
-use crate::token::Operator;
+use crate::token::{Operator, Token};
 
 pub trait ExprAST {}
 pub type Expr = Box<dyn ExprAST>;
