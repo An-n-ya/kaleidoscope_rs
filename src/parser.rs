@@ -1,12 +1,19 @@
 use nom::{
+    branch::alt,
     bytes::complete::take,
+    combinator::{map, opt, verify},
     error::{Error, ErrorKind},
+    multi::many0,
+    sequence::{pair, tuple},
     Err, IResult,
 };
 
 use crate::{
-    ast::{BinaryExprAST, Expr, ExprAST, NumberExprAST},
-    token::{Operator, Token, Tokens},
+    ast::{
+        BinaryExprAST, CallExprAST, Expr, ExprAST, ExprStmt, Function, NumberExprAST, Prototype,
+        Stmt, VariableExprAST, AST,
+    },
+    token::{self, tokenize, Operator, Token, Tokens},
 };
 
 // TODO: add precedence
@@ -54,11 +61,42 @@ impl<'a> Token<'a> {
     }
 }
 
-fn primary<'a>(input: Tokens) -> IResult<Tokens, Expr> {
-    todo!()
+macro_rules! tag_token {
+    ($func_name: ident, $tag: expr) => {
+        fn $func_name(tokens: Tokens) -> IResult<Tokens, Tokens> {
+            verify(take(1usize), |t: &Tokens| t.tok[0] == $tag)(tokens)
+        }
+    };
 }
 
-fn number_expr<'a>(tokens: Tokens) -> IResult<Tokens, Expr> {
+tag_token!(def_tag, Token::DEF);
+tag_token!(left_paren_tag, Token::LEFT_PAREN);
+tag_token!(right_paren_tag, Token::RIGHT_PAREN);
+tag_token!(comma_tag, Token::COMMA);
+tag_token!(extern_tag, Token::EXTERN);
+tag_token!(if_tag, Token::IF);
+tag_token!(then_tag, Token::THEN);
+tag_token!(else_tag, Token::ELSE);
+tag_token!(semicolon_tag, Token::SEMICOLON);
+
+fn parse_program(tokens: Tokens) -> IResult<Tokens, Vec<Stmt>> {
+    many0(statement)(tokens)
+}
+
+/// top ::= definition | external | expression | ';'
+fn statement(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    alt((function_definition, extern_stmt, expression_stmt))(tokens)
+}
+
+/// primary
+///   ::= identifierexpr
+///   ::= numberexpr
+///   ::= parenexpr
+fn primary(input: Tokens) -> IResult<Tokens, Expr> {
+    alt((number_expr, identifier_expr, paren_expr))(input)
+}
+
+fn number_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
     let (next_tokens, res) = take(1usize)(tokens)?;
     if res.tok.is_empty() {
         Err(Err::Error(Error::new(tokens, ErrorKind::Tag)))
@@ -70,9 +108,61 @@ fn number_expr<'a>(tokens: Tokens) -> IResult<Tokens, Expr> {
     }
 }
 
-fn expression<'a>(input: Tokens) -> IResult<Tokens, Expr> {
-    let (tokens, lhs) = primary(input)?;
-    binary_op_rhs(input, lhs, Precedence::Lowest)
+fn identifier(tokens: Tokens) -> IResult<Tokens, String> {
+    let (next_tokens, res) = take(1usize)(tokens)?;
+    if res.tok.is_empty() {
+        Err(Err::Error(Error::new(tokens, ErrorKind::Tag)))
+    } else {
+        match res.tok[0] {
+            Token::IDENTIFIER(v) => Ok((next_tokens, v.to_string())),
+            _ => Err(Err::Error(Error::new(tokens, ErrorKind::Tag))),
+        }
+    }
+}
+
+/// parenexpr ::= '(' expression ')'
+fn paren_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
+    map(
+        tuple((left_paren_tag, expression, right_paren_tag)),
+        |(_, expr, _)| expr,
+    )(tokens)
+}
+
+/// identifierexpr
+///   ::= identifier
+///   ::= identifier '(' (expression,)* ')'
+fn identifier_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
+    fn expr_with_comma(tokens: Tokens) -> IResult<Tokens, Expr> {
+        map(pair(expression, comma_tag), |(expr, _)| expr)(tokens)
+    }
+
+    fn args(tokens: Tokens) -> IResult<Tokens, Vec<Expr>> {
+        map(
+            tuple((many0(expr_with_comma), expression, opt(comma_tag))),
+            |(mut exprs, expr, _)| {
+                exprs.push(expr);
+                exprs
+            },
+        )(tokens)
+    }
+
+    alt((
+        map(identifier, |v| VariableExprAST::new(v)),
+        map(
+            tuple((identifier, left_paren_tag, args, right_paren_tag)),
+            |(callee, _, args, _)| CallExprAST::new(callee, args),
+        ),
+    ))(tokens)
+}
+
+fn expression_stmt<'a>(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    map(pair(expression, semicolon_tag), |(expr, _)| {
+        ExprStmt::new(expr)
+    })(tokens)
+}
+fn expression<'a>(tokens: Tokens) -> IResult<Tokens, Expr> {
+    let (tokens, lhs) = primary(tokens)?;
+    binary_op_rhs(tokens, lhs, Precedence::Lowest)
 }
 
 fn binary_op_rhs(
@@ -99,5 +189,63 @@ fn binary_op_rhs(
         }
 
         lhs = BinaryExprAST::new(op.to_operator(), lhs, rhs);
+    }
+}
+
+/// prototype
+///   ::= id '(' id* ')'
+fn prototype(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    fn expr_with_comma(tokens: Tokens) -> IResult<Tokens, String> {
+        map(pair(identifier, comma_tag), |(expr, _)| expr)(tokens)
+    }
+
+    fn args(tokens: Tokens) -> IResult<Tokens, Vec<String>> {
+        map(
+            tuple((many0(expr_with_comma), identifier, opt(comma_tag))),
+            |(mut exprs, expr, _)| {
+                exprs.push(expr);
+                exprs
+            },
+        )(tokens)
+    }
+
+    map(
+        tuple((identifier, left_paren_tag, args, right_paren_tag)),
+        |(callee, _, args, _)| Prototype::new(callee, args),
+    )(tokens)
+}
+
+/// definition ::= 'def' prototype expression
+fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    map(
+        tuple((def_tag, prototype, expression)),
+        |(_, proto, expr)| Function::new(proto.to_proto().unwrap(), expr),
+    )(tokens)
+}
+
+/// external ::= 'extern' prototype
+fn extern_stmt(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    map(pair(extern_tag, prototype), |(_, proto)| proto)(tokens)
+}
+
+pub struct Parser {}
+
+impl Parser {
+    pub fn parse(&self, input: &str) -> Vec<Stmt> {
+        let (_, tokens) = tokenize(input).expect("cannot tokenize");
+        let (_, res) = parse_program(Tokens::new(&tokens)).expect("parse failed");
+        res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test1() {
+        let parser = Parser {};
+        let input = "id;";
+        let res = parser.parse(input);
+        assert_eq!(res.len(), 1);
     }
 }

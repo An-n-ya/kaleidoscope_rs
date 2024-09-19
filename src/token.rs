@@ -23,6 +23,8 @@ pub enum Token<'a> {
     NUMBER(f64),
     LEFT_PAREN,
     RIGHT_PAREN,
+    COMMA,
+    SEMICOLON,
     OPERATOR(Operator),
     IF,
     THEN,
@@ -198,7 +200,16 @@ fn number(input: &str) -> IResult<&str, Token> {
     Ok((input, Token::NUMBER(res)))
 }
 fn symbol(input: &str) -> IResult<&str, Token> {
-    let (input, res) = alt((tag("<"), tag(">"), tag("+"), tag("-"), tag("("), tag(")")))(input)?;
+    let (input, res) = alt((
+        tag("<"),
+        tag(">"),
+        tag("+"),
+        tag("-"),
+        tag("("),
+        tag(")"),
+        tag(","),
+        tag(";"),
+    ))(input)?;
     Ok((input, {
         match res {
             "<" => Token::OPERATOR(Operator::LESS),
@@ -207,6 +218,8 @@ fn symbol(input: &str) -> IResult<&str, Token> {
             "-" => Token::OPERATOR(Operator::MINUS),
             "(" => Token::LEFT_PAREN,
             ")" => Token::RIGHT_PAREN,
+            "," => Token::COMMA,
+            ";" => Token::SEMICOLON,
             _ => unreachable!(),
         }
     }))
@@ -254,6 +267,16 @@ fib(40)";
         let (_, res) = tokenize(input).expect("cannot parse");
         let res = format!("{:?}", res);
         let expected = br#"[DEF, IDENTIFIER("fib"), LEFT_PAREN, IDENTIFIER("x"), RIGHT_PAREN, IF, IDENTIFIER("x"), OPERATOR(LESS), NUMBER(3.0), THEN, NUMBER(1.0), ELSE, IDENTIFIER("fib"), LEFT_PAREN, IDENTIFIER("x"), OPERATOR(MINUS), NUMBER(1.0), RIGHT_PAREN, OPERATOR(PLUS), IDENTIFIER("fib"), LEFT_PAREN, IDENTIFIER("x"), OPERATOR(MINUS), NUMBER(2.0), RIGHT_PAREN, IDENTIFIER("fib"), LEFT_PAREN, NUMBER(40.0), RIGHT_PAREN]"#;
+        let expected = str::from_utf8(expected).unwrap();
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn semicolon() {
+        let input = "id;";
+        let (_, res) = tokenize(input).expect("cannot parse");
+        let res = format!("{:?}", res);
+        let expected = br#"[IDENTIFIER("id"), SEMICOLON]"#;
         let expected = str::from_utf8(expected).unwrap();
         assert_eq!(res, expected);
     }
