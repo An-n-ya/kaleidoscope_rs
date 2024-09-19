@@ -78,9 +78,10 @@ tag_token!(if_tag, Token::IF);
 tag_token!(then_tag, Token::THEN);
 tag_token!(else_tag, Token::ELSE);
 tag_token!(semicolon_tag, Token::SEMICOLON);
+tag_token!(eof_tag, Token::EOF);
 
 fn parse_program(tokens: Tokens) -> IResult<Tokens, Vec<Stmt>> {
-    many0(statement)(tokens)
+    map(pair(many0(statement), eof_tag), |(ret, _)| ret)(tokens)
 }
 
 /// top ::= definition | external | expression | ';'
@@ -156,13 +157,15 @@ fn identifier_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
 }
 
 fn expression_stmt<'a>(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    println!("expression_stmt");
     map(pair(expression, semicolon_tag), |(expr, _)| {
         ExprStmt::new(expr)
     })(tokens)
 }
 fn expression<'a>(tokens: Tokens) -> IResult<Tokens, Expr> {
+    println!("expression");
     let (tokens, lhs) = primary(tokens)?;
-    binary_op_rhs(tokens, lhs, Precedence::Lowest)
+    binary_op_rhs(tokens, lhs, Precedence::Level1)
 }
 
 fn binary_op_rhs(
@@ -173,12 +176,16 @@ fn binary_op_rhs(
     let mut next_tokens = tokens;
     loop {
         let (n_next_tokens, ops) = take(1usize)(next_tokens)?;
-        next_tokens = n_next_tokens;
         let op = ops.tok[0].clone();
         let tok_precedence = op.precedence();
+        println!(
+            "handle op {:?}, tok_prec: {:?}, expr_prec: {:?}",
+            op, tok_precedence, expr_precedence
+        );
         if tok_precedence < expr_precedence {
             return Ok((next_tokens, lhs));
         }
+        next_tokens = n_next_tokens;
 
         let (n_next_tokens, mut rhs) = primary(next_tokens)?;
         next_tokens = n_next_tokens;
@@ -217,6 +224,7 @@ fn prototype(tokens: Tokens) -> IResult<Tokens, Stmt> {
 
 /// definition ::= 'def' prototype expression
 fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    println!("function_definition");
     map(
         tuple((def_tag, prototype, expression)),
         |(_, proto, expr)| Function::new(proto.to_proto().unwrap(), expr),
@@ -225,6 +233,7 @@ fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt> {
 
 /// external ::= 'extern' prototype
 fn extern_stmt(tokens: Tokens) -> IResult<Tokens, Stmt> {
+    println!("extern_stmt");
     map(pair(extern_tag, prototype), |(_, proto)| proto)(tokens)
 }
 
@@ -232,7 +241,8 @@ pub struct Parser {}
 
 impl Parser {
     pub fn parse(&self, input: &str) -> Vec<Stmt> {
-        let (_, tokens) = tokenize(input).expect("cannot tokenize");
+        let (_, mut tokens) = tokenize(input).expect("cannot tokenize");
+        tokens.push(Token::EOF);
         let (_, res) = parse_program(Tokens::new(&tokens)).expect("parse failed");
         res
     }
