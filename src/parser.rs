@@ -9,11 +9,8 @@ use nom::{
 };
 
 use crate::{
-    ast::{
-        BinaryExprAST, CallExprAST, Expr, ExprAST, ExprStmt, Function, NumberExprAST, Prototype,
-        Stmt, VariableExprAST, AST,
-    },
-    token::{self, tokenize, Operator, Token, Tokens},
+    ast::{Binary, Call, Expr, ExprStmt, Function, Number, Prototype, Stmt, Variable},
+    token::{tokenize, Operator, Token, Tokens},
 };
 
 // TODO: add precedence
@@ -103,7 +100,7 @@ fn number_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
         Err(Err::Error(Error::new(tokens, ErrorKind::Tag)))
     } else {
         match res.tok[0] {
-            Token::NUMBER(v) => Ok((next_tokens, NumberExprAST::new(v))),
+            Token::NUMBER(v) => Ok((next_tokens, Number::new(v))),
             _ => Err(Err::Error(Error::new(tokens, ErrorKind::Tag))),
         }
     }
@@ -148,10 +145,10 @@ fn identifier_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
     }
 
     alt((
-        map(identifier, |v| VariableExprAST::new(v)),
+        map(identifier, |v| Variable::new(v)),
         map(
             tuple((identifier, left_paren_tag, args, right_paren_tag)),
-            |(callee, _, args, _)| CallExprAST::new(callee, args),
+            |(callee, _, args, _)| Call::new(callee, args),
         ),
     ))(tokens)
 }
@@ -195,7 +192,7 @@ fn binary_op_rhs(
             (next_tokens, rhs) = binary_op_rhs(next_tokens, rhs, tok_precedence.next_level())?;
         }
 
-        lhs = BinaryExprAST::new(op.to_operator(), lhs, rhs);
+        lhs = Binary::new(op.to_operator(), Box::new(lhs), Box::new(rhs));
     }
 }
 
@@ -227,7 +224,7 @@ fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt> {
     println!("function_definition");
     map(
         tuple((def_tag, prototype, expression)),
-        |(_, proto, expr)| Function::new(proto.to_proto().unwrap(), expr),
+        |(_, proto, expr)| Function::new(proto, expr),
     )(tokens)
 }
 
@@ -254,8 +251,20 @@ mod tests {
     #[test]
     fn test1() {
         let parser = Parser {};
-        let input = "id;";
+        let input = "id < id + 2 < 1;";
         let res = parser.parse(input);
-        assert_eq!(res.len(), 1);
+        let dumped_stmts = res.iter().map(|stmt| stmt.dump()).collect::<Vec<_>>();
+        let expect = vec![
+            "ExprStmt
+  Binary(LESS)
+    Binary(LESS)
+      Variable(id)
+      Binary(PLUS)
+        Variable(id)
+        Number(2)
+    Number(1)
+",
+        ];
+        assert_eq!(dumped_stmts, expect);
     }
 }
