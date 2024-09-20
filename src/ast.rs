@@ -131,6 +131,7 @@ impl Stmt {
             }
             Stmt::Function(function) => {
                 let proto = Stmt::Prototype(function.prototype.clone());
+                res.push_str("Function:\n");
                 res.push_str("prototype:\n");
                 res.push_str(&proto.dump_with_ident(ident + 1));
                 res.push_str("expr:\n");

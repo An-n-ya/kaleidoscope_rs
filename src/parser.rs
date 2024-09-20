@@ -154,13 +154,11 @@ fn identifier_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
 }
 
 fn expression_stmt<'a>(tokens: Tokens) -> IResult<Tokens, Stmt> {
-    println!("expression_stmt");
     map(pair(expression, semicolon_tag), |(expr, _)| {
         ExprStmt::new(expr)
     })(tokens)
 }
 fn expression<'a>(tokens: Tokens) -> IResult<Tokens, Expr> {
-    println!("expression");
     let (tokens, lhs) = primary(tokens)?;
     binary_op_rhs(tokens, lhs, Precedence::Level1)
 }
@@ -175,10 +173,6 @@ fn binary_op_rhs(
         let (n_next_tokens, ops) = take(1usize)(next_tokens)?;
         let op = ops.tok[0].clone();
         let tok_precedence = op.precedence();
-        println!(
-            "handle op {:?}, tok_prec: {:?}, expr_prec: {:?}",
-            op, tok_precedence, expr_precedence
-        );
         if tok_precedence < expr_precedence {
             return Ok((next_tokens, lhs));
         }
@@ -221,17 +215,18 @@ fn prototype(tokens: Tokens) -> IResult<Tokens, Stmt> {
 
 /// definition ::= 'def' prototype expression
 fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt> {
-    println!("function_definition");
     map(
-        tuple((def_tag, prototype, expression)),
-        |(_, proto, expr)| Function::new(proto, expr),
+        tuple((def_tag, prototype, expression, semicolon_tag)),
+        |(_, proto, expr, _)| Function::new(proto, expr),
     )(tokens)
 }
 
 /// external ::= 'extern' prototype
 fn extern_stmt(tokens: Tokens) -> IResult<Tokens, Stmt> {
-    println!("extern_stmt");
-    map(pair(extern_tag, prototype), |(_, proto)| proto)(tokens)
+    map(
+        tuple((extern_tag, prototype, semicolon_tag)),
+        |(_, proto, _)| proto,
+    )(tokens)
 }
 
 pub struct Parser {}
@@ -251,9 +246,14 @@ mod tests {
     #[test]
     fn test1() {
         let parser = Parser {};
-        let input = "id < id + 2 < 1;";
+        let input = "id < id + 2 < 1;
+def foo(arg1, arg2) arg1 + arg2;
+extern boo(arg1);";
         let res = parser.parse(input);
         let dumped_stmts = res.iter().map(|stmt| stmt.dump()).collect::<Vec<_>>();
+        for s in &dumped_stmts {
+            println!("{s}");
+        }
         let expect = vec![
             "ExprStmt
   Binary(LESS)
@@ -263,6 +263,16 @@ mod tests {
         Variable(id)
         Number(2)
     Number(1)
+",
+            "Function:
+prototype:
+  Prototype: foo(arg1,arg2)
+expr:
+  Binary(PLUS)
+    Variable(arg1)
+    Variable(arg2)
+",
+            "Prototype: boo(arg1)
 ",
         ];
         assert_eq!(dumped_stmts, expect);
