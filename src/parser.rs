@@ -13,7 +13,8 @@ use crate::{
     token::{tokenize, Operator, Token, Tokens},
 };
 
-// TODO: add precedence
+// refer to monkey-rust
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Precedence {
     Lowest,

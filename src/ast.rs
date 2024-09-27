@@ -1,4 +1,4 @@
-use crate::token::Operator;
+use crate::{ast_dumper::AstDumper, token::Operator};
 
 pub enum Expr {
     Number(Number),
@@ -12,8 +12,24 @@ pub enum Stmt {
     Expr(ExprStmt),
 }
 
+pub trait Visitor<R> {
+    fn visit_expr(&mut self, expr: &Expr) -> R;
+    fn visit_stmt(&mut self, stmt: &Stmt) -> R;
+}
+
+impl Expr {
+    pub fn accept<R>(&self, visitor: &mut dyn Visitor<R>) -> R {
+        visitor.visit_expr(self)
+    }
+}
+impl Stmt {
+    pub fn accept<R>(&self, visitor: &mut dyn Visitor<R>) -> R {
+        visitor.visit_stmt(self)
+    }
+}
+
 pub struct Number {
-    val: f64,
+    pub val: f64,
 }
 impl Number {
     pub fn new(val: f64) -> Expr {
@@ -22,7 +38,7 @@ impl Number {
 }
 
 pub struct Variable {
-    name: String,
+    pub name: String,
 }
 impl Variable {
     pub fn new(name: String) -> Expr {
@@ -31,9 +47,9 @@ impl Variable {
 }
 
 pub struct Binary {
-    op: Operator,
-    lhs: Box<Expr>,
-    rhs: Box<Expr>,
+    pub op: Operator,
+    pub lhs: Box<Expr>,
+    pub rhs: Box<Expr>,
 }
 impl Binary {
     pub fn new(op: Operator, lhs: Box<Expr>, rhs: Box<Expr>) -> Expr {
@@ -42,8 +58,8 @@ impl Binary {
 }
 
 pub struct Call {
-    callee: String,
-    args: Vec<Expr>,
+    pub callee: String,
+    pub args: Vec<Expr>,
 }
 impl Call {
     pub fn new(callee: String, args: Vec<Expr>) -> Expr {
@@ -53,8 +69,8 @@ impl Call {
 
 #[derive(Clone)]
 pub struct Prototype {
-    name: String,
-    args: Vec<String>,
+    pub name: String,
+    pub args: Vec<String>,
 }
 impl Prototype {
     pub fn new(name: String, args: Vec<String>) -> Stmt {
@@ -63,8 +79,8 @@ impl Prototype {
 }
 
 pub struct Function {
-    prototype: Prototype,
-    expr: Expr,
+    pub prototype: Prototype,
+    pub expr: Expr,
 }
 impl Function {
     pub fn new(prototype: Stmt, expr: Expr) -> Stmt {
@@ -77,7 +93,7 @@ impl Function {
     }
 }
 pub struct ExprStmt {
-    expr: Expr,
+    pub expr: Expr,
 }
 impl ExprStmt {
     pub fn new(expr: Expr) -> Stmt {
@@ -87,64 +103,14 @@ impl ExprStmt {
 
 impl Expr {
     pub fn dump(&self) -> String {
-        self.dump_with_ident(0)
-    }
-
-    fn dump_with_ident(&self, ident: usize) -> String {
-        let mut res = "  ".repeat(ident).to_string();
-        match self {
-            Expr::Number(number) => res.push_str(&format!("Number({})", number.val)),
-            Expr::Variable(variable) => res.push_str(&format!("Variable({})", variable.name)),
-            Expr::Call(call) => {
-                res.push_str(&format!("Call({})\n", call.callee));
-                for e in &call.args {
-                    res.push_str(&e.dump_with_ident(ident + 1));
-                }
-            }
-            Expr::Binary(binary) => {
-                res.push_str(&format!("Binary({:?})\n", binary.op));
-                for e in [&binary.lhs, &binary.rhs] {
-                    res.push_str(&e.dump_with_ident(ident + 1));
-                }
-            }
-        }
-        if !res.ends_with('\n') {
-            res.push('\n');
-        }
-        res
+        let mut dumper = AstDumper::new();
+        self.accept(&mut dumper)
     }
 }
 
 impl Stmt {
     pub fn dump(&self) -> String {
-        self.dump_with_ident(0)
-    }
-    fn dump_with_ident(&self, ident: usize) -> String {
-        let mut res = "  ".repeat(ident).to_string();
-        match self {
-            Stmt::Prototype(prototype) => {
-                res.push_str(&format!(
-                    "Prototype: {}({})",
-                    prototype.name,
-                    prototype.args.join(",")
-                ));
-            }
-            Stmt::Function(function) => {
-                let proto = Stmt::Prototype(function.prototype.clone());
-                res.push_str("Function:\n");
-                res.push_str("prototype:\n");
-                res.push_str(&proto.dump_with_ident(ident + 1));
-                res.push_str("expr:\n");
-                res.push_str(&function.expr.dump_with_ident(ident + 1));
-            }
-            Stmt::Expr(expr_stmt) => {
-                res.push_str("ExprStmt\n");
-                res.push_str(&expr_stmt.expr.dump_with_ident(ident + 1));
-            }
-        }
-        if !res.ends_with('\n') {
-            res.push('\n');
-        }
-        res
+        let mut dumper = AstDumper::new();
+        self.accept(&mut dumper)
     }
 }
