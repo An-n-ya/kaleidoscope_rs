@@ -43,7 +43,7 @@ impl<'a> Token<'a> {
     pub fn to_operator(&self) -> Operator {
         match self {
             Token::OPERATOR(op) => op.clone(),
-            _ => unreachable!(),
+            _ => unreachable!("token {:?} tries to convert to operator", self),
         }
     }
 }

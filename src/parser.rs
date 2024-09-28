@@ -146,11 +146,11 @@ fn identifier_expr(tokens: Tokens) -> IResult<Tokens, Expr> {
     }
 
     alt((
-        map(identifier, |v| Variable::new(v)),
         map(
             tuple((identifier, left_paren_tag, args, right_paren_tag)),
             |(callee, _, args, _)| Call::new(callee, args),
         ),
+        map(identifier, |v| Variable::new(v)),
     ))(tokens)
 }
 

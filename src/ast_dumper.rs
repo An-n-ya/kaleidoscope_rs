@@ -1,6 +1,8 @@
 use std::ffi::CStr;
 
+use llvm_sys::core::LLVMPrintTypeToString;
 use llvm_sys::core::LLVMPrintValueToString;
+use llvm_sys::prelude::LLVMTypeRef;
 use llvm_sys::prelude::LLVMValueRef;
 
 use crate::ast::Expr;
@@ -24,7 +26,16 @@ impl AstDumper {
     }
 }
 
-fn llvm_value_to_string(v: LLVMValueRef) -> String {
+pub fn llvm_type_to_string(v: LLVMTypeRef) -> String {
+    let raw_str = unsafe { LLVMPrintTypeToString(v) };
+    if raw_str.is_null() {
+        return String::from("<error>");
+    }
+
+    let c_str = unsafe { CStr::from_ptr(raw_str) };
+    c_str.to_string_lossy().into_owned()
+}
+pub fn llvm_value_to_string(v: LLVMValueRef) -> String {
     let raw_str = unsafe { LLVMPrintValueToString(v) };
     if raw_str.is_null() {
         return String::from("<error>");

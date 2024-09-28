@@ -23,8 +23,10 @@ use llvm_sys::core::LLVMGetFirstBasicBlock;
 use llvm_sys::core::LLVMGetFirstParam;
 use llvm_sys::core::LLVMGetNamedFunction;
 use llvm_sys::core::LLVMGetNextParam;
+use llvm_sys::core::LLVMGetReturnType;
 use llvm_sys::core::LLVMModuleCreateWithName;
 use llvm_sys::core::LLVMPositionBuilderAtEnd;
+use llvm_sys::core::LLVMPrintValueToString;
 use llvm_sys::core::LLVMSetValueName2;
 use llvm_sys::core::LLVMTypeOf;
 use llvm_sys::prelude::LLVMBuilderRef;
@@ -36,6 +38,8 @@ use llvm_sys::LLVMRealPredicate;
 use crate::ast::Expr;
 use crate::ast::Stmt;
 use crate::ast::Visitor;
+use crate::ast_dumper::llvm_type_to_string;
+use crate::ast_dumper::llvm_value_to_string;
 
 // TODO: refactor LLVM interface
 
@@ -97,8 +101,17 @@ impl Visitor<LLVMValueRef> for CodeGen {
                         args.push(arg.accept(self));
                     }
 
-                    let function_type = LLVMGetElementType(LLVMTypeOf(callee_f));
+                    // FIXME: cannot get type of callee_f, this is a workaround
+                    let double_type = LLVMDoubleTypeInContext(self.context);
+                    let mut doubles = vec![double_type; expected_arg_count];
+                    let function_type = LLVMFunctionType(
+                        double_type,
+                        doubles.as_mut_ptr(),
+                        doubles.len() as u32,
+                        0,
+                    );
 
+                    let name = CString::new("calltmp").unwrap();
                     let call = LLVMBuildCall2(
                         self.builder,
                         function_type,
@@ -181,7 +194,7 @@ impl Visitor<LLVMValueRef> for CodeGen {
                         doubles.len() as u32,
                         0,
                     );
-                    let name = CString::new("functmp").unwrap();
+                    let name = CString::new(prototype.name.clone()).unwrap();
                     let func = LLVMAddFunction(self.module, name.as_ptr(), function_type);
                     if func.is_null() {
                         panic!("Error creating function");
@@ -249,7 +262,8 @@ mod tests {
     fn test1() {
         let parser = Parser {};
         let input = "4 + 5;
-def foo(a,b) a + b;";
+def foo(a,b) a + b;
+def boo(a) a < foo(a,2);";
         let res = parser.parse(input);
         let code_gen = CodeGen::new();
         let dumped_stmts = res
@@ -261,10 +275,17 @@ def foo(a,b) a + b;";
         }
         let expect = vec![
             "double 9.000000e+00\n",
-            "define double @functmp(double %a, double %b) {
+            "define double @foo(double %a, double %b) {
 entry:
   %addtmp = fadd double %a, %b
   ret double %addtmp
+}\n",
+            "define double @boo(double %a) {
+entry:
+  %calltmp = call double @foo(double %a, double 2.000000e+00)
+  %lesstmp = fcmp ult double %a, %calltmp
+  %booltmp = uitofp i1 %lesstmp to double
+  ret double %booltmp
 }\n",
         ];
         assert_eq!(dumped_stmts, expect);

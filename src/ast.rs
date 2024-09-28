@@ -1,11 +1,13 @@
 use crate::{ast_dumper::AstDumper, codegen::CodeGen, token::Operator};
 
+#[derive(Debug)]
 pub enum Expr {
     Number(Number),
     Variable(Variable),
     Call(Call),
     Binary(Binary),
 }
+#[derive(Debug)]
 pub enum Stmt {
     Prototype(Prototype),
     Function(Function),
@@ -28,6 +30,7 @@ impl Stmt {
     }
 }
 
+#[derive(Debug)]
 pub struct Number {
     pub val: f64,
 }
@@ -37,6 +40,7 @@ impl Number {
     }
 }
 
+#[derive(Debug)]
 pub struct Variable {
     pub name: String,
 }
@@ -46,6 +50,7 @@ impl Variable {
     }
 }
 
+#[derive(Debug)]
 pub struct Binary {
     pub op: Operator,
     pub lhs: Box<Expr>,
@@ -57,6 +62,7 @@ impl Binary {
     }
 }
 
+#[derive(Debug)]
 pub struct Call {
     pub callee: String,
     pub args: Vec<Expr>,
@@ -67,7 +73,7 @@ impl Call {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Prototype {
     pub name: String,
     pub args: Vec<String>,
@@ -78,6 +84,7 @@ impl Prototype {
     }
 }
 
+#[derive(Debug)]
 pub struct Function {
     pub prototype: Prototype,
     pub expr: Expr,
@@ -95,6 +102,7 @@ impl Function {
         Stmt::Prototype(self.prototype.clone())
     }
 }
+#[derive(Debug)]
 pub struct ExprStmt {
     pub expr: Expr,
 }
