@@ -1,4 +1,4 @@
-use crate::{ast_dumper::AstDumper, token::Operator};
+use crate::{ast_dumper::AstDumper, codegen::CodeGen, token::Operator};
 
 pub enum Expr {
     Number(Number),
@@ -91,6 +91,9 @@ impl Function {
             }
         }
     }
+    pub fn get_proto(&self) -> Stmt {
+        Stmt::Prototype(self.prototype.clone())
+    }
 }
 pub struct ExprStmt {
     pub expr: Expr,
@@ -103,14 +106,22 @@ impl ExprStmt {
 
 impl Expr {
     pub fn dump(&self) -> String {
-        let mut dumper = AstDumper::new();
+        let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::AST);
+        self.accept(&mut dumper)
+    }
+    pub fn dump_ir(&self, code_gen: CodeGen) -> String {
+        let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::LLVMIR(code_gen));
         self.accept(&mut dumper)
     }
 }
 
 impl Stmt {
     pub fn dump(&self) -> String {
-        let mut dumper = AstDumper::new();
+        let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::AST);
+        self.accept(&mut dumper)
+    }
+    pub fn dump_ir(&self, code_gen: CodeGen) -> String {
+        let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::LLVMIR(code_gen));
         self.accept(&mut dumper)
     }
 }

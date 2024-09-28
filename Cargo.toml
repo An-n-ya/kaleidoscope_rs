@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+llvm-sys = "191.0.0"
 miette = "7.2.0"
 nom = "7.1.3"
