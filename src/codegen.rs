@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::CStr;
 use std::ffi::CString;
 use std::ptr;
 
@@ -24,11 +23,8 @@ use llvm_sys::core::LLVMGetFirstBasicBlock;
 use llvm_sys::core::LLVMGetFirstParam;
 use llvm_sys::core::LLVMGetNamedFunction;
 use llvm_sys::core::LLVMGetNextParam;
-use llvm_sys::core::LLVMGetValueName2;
-use llvm_sys::core::LLVMInsertBasicBlock;
-use llvm_sys::core::LLVMInsertExistingBasicBlockAfterInsertBlock;
 use llvm_sys::core::LLVMModuleCreateWithName;
-use llvm_sys::core::LLVMRemoveBasicBlockFromParent;
+use llvm_sys::core::LLVMPositionBuilderAtEnd;
 use llvm_sys::core::LLVMSetValueName2;
 use llvm_sys::core::LLVMTypeOf;
 use llvm_sys::prelude::LLVMBuilderRef;
@@ -40,6 +36,8 @@ use llvm_sys::LLVMRealPredicate;
 use crate::ast::Expr;
 use crate::ast::Stmt;
 use crate::ast::Visitor;
+
+// TODO: refactor LLVM interface
 
 #[derive(Clone)]
 pub struct CodeGen {
@@ -214,12 +212,12 @@ impl Visitor<LLVMValueRef> for CodeGen {
                     }
                     let name = CString::new("entry").unwrap();
                     let block = LLVMAppendBasicBlockInContext(self.context, func, name.as_ptr());
-                    LLVMInsertExistingBasicBlockAfterInsertBlock(self.builder, block);
+                    LLVMPositionBuilderAtEnd(self.builder, block);
                     self.named_values.clear();
                     let mut idx = 0;
                     let mut param_iter = LLVMGetFirstParam(func);
                     while !param_iter.is_null() && idx < function.prototype.args.len() {
-                        let name = get_param_name(param_iter);
+                        let name = function.prototype.args[idx].clone();
                         self.named_values.insert(name, param_iter);
                         param_iter = LLVMGetNextParam(param_iter);
                         idx += 1;
@@ -229,6 +227,7 @@ impl Visitor<LLVMValueRef> for CodeGen {
                         LLVMDeleteFunction(func);
                     }
                     LLVMBuildRet(self.builder, ret);
+                    // FIXME: Function context does not match Module context!
                     LLVMVerifyFunction(
                         func,
                         llvm_sys::analysis::LLVMVerifierFailureAction::LLVMPrintMessageAction,
@@ -241,16 +240,6 @@ impl Visitor<LLVMValueRef> for CodeGen {
     }
 }
 
-unsafe fn get_param_name(param: LLVMValueRef) -> String {
-    let name_ptr = LLVMGetValueName2(param, ptr::null_mut());
-    if name_ptr.is_null() {
-        return String::from("<unnamed>");
-    }
-
-    let c_str = CStr::from_ptr(name_ptr);
-    c_str.to_string_lossy().into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use crate::parser::Parser;
@@ -259,7 +248,8 @@ mod tests {
     #[test]
     fn test1() {
         let parser = Parser {};
-        let input = "4 + 5;";
+        let input = "4 + 5;
+def foo(a,b) a + b;";
         let res = parser.parse(input);
         let code_gen = CodeGen::new();
         let dumped_stmts = res
@@ -269,7 +259,14 @@ mod tests {
         for s in &dumped_stmts {
             println!("{s}");
         }
-        let expect = vec!["double 9.000000e+00\n"];
+        let expect = vec![
+            "double 9.000000e+00\n",
+            "define double @functmp(double %a, double %b) {
+entry:
+  %addtmp = fadd double %a, %b
+  ret double %addtmp
+}\n",
+        ];
         assert_eq!(dumped_stmts, expect);
     }
 }
