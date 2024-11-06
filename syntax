@@ -1,0 +1,8 @@
+expression
+    ::= equation
+equation
+    ::= comparison
+prototype
+    ::= id '(' (id,)* ')'
+difinition
+    ::= 'def' prototype expression

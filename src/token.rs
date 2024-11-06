@@ -3,6 +3,7 @@ use std::{
     ops::{Range, RangeFrom, RangeFull, RangeTo},
 };
 
+use miette::LabeledSpan;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -11,11 +12,18 @@ use nom::{
     multi::many0,
     number::complete::double,
     sequence::{delimited, pair},
-    IResult, InputIter, InputLength, InputTake, Needed, Slice,
+    Err::Error,
+    Finish, IResult, InputIter, InputLength, InputTake, Needed, Offset, Slice,
 };
+#[derive(PartialEq, Debug, Clone)]
+pub struct Token<'a> {
+    pub kind: TokenKind<'a>,
+    pub origin: &'a str,
+    pub code: &'a str,
+}
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Token<'a> {
+pub enum TokenKind<'a> {
     EOF,
     DEF,
     EXTERN,
@@ -41,8 +49,8 @@ pub enum Operator {
 
 impl<'a> Token<'a> {
     pub fn to_operator(&self) -> Operator {
-        match self {
-            Token::OPERATOR(op) => op.clone(),
+        match &self.kind {
+            TokenKind::OPERATOR(op) => op.clone(),
             _ => unreachable!("token {:?} tries to convert to operator", self),
         }
     }
@@ -174,6 +182,7 @@ impl<'a> InputIter for Tokens<'a> {
 
 // TODO: write a Tokenizer to maintain the current pos/line information
 // TODO: use miette to report the wrong tokenized symbol
+//
 
 pub fn tokenize(input: &str) -> IResult<&str, Vec<Token>> {
     many0(get_token)(input)
@@ -192,15 +201,27 @@ fn ignorance(input: &str) -> IResult<&str, ()> {
 }
 
 fn identifier(input: &str) -> IResult<&str, Token> {
-    let (input, res) = recognize(pair(alpha1, many0(alphanumeric1)))(input)?;
-    Ok((input, Token::IDENTIFIER(res)))
+    let (remain, res) = recognize(pair(alpha1, many0(alphanumeric1)))(input)?;
+    let tok = Token {
+        kind: TokenKind::IDENTIFIER(res),
+        origin: res,
+        code: input,
+    };
+    Ok((remain, tok))
 }
 fn number(input: &str) -> IResult<&str, Token> {
-    let (input, res) = double(input)?;
-    Ok((input, Token::NUMBER(res)))
+    let (remain, res) = double(input)?;
+    let offset = input.offset(remain);
+    let origin = &input[0..offset];
+    let tok = Token {
+        kind: TokenKind::NUMBER(res),
+        origin,
+        code: input,
+    };
+    Ok((remain, tok))
 }
 fn symbol(input: &str) -> IResult<&str, Token> {
-    let (input, res) = alt((
+    let (remain, res) = alt((
         tag("<"),
         tag(">"),
         tag("+"),
@@ -210,38 +231,46 @@ fn symbol(input: &str) -> IResult<&str, Token> {
         tag(","),
         tag(";"),
     ))(input)?;
-    Ok((input, {
-        match res {
-            "<" => Token::OPERATOR(Operator::LESS),
-            ">" => Token::OPERATOR(Operator::GREATER),
-            "+" => Token::OPERATOR(Operator::PLUS),
-            "-" => Token::OPERATOR(Operator::MINUS),
-            "(" => Token::LEFT_PAREN,
-            ")" => Token::RIGHT_PAREN,
-            "," => Token::COMMA,
-            ";" => Token::SEMICOLON,
-            _ => unreachable!(),
-        }
-    }))
+    let kind = match res {
+        "<" => TokenKind::OPERATOR(Operator::LESS),
+        ">" => TokenKind::OPERATOR(Operator::GREATER),
+        "+" => TokenKind::OPERATOR(Operator::PLUS),
+        "-" => TokenKind::OPERATOR(Operator::MINUS),
+        "(" => TokenKind::LEFT_PAREN,
+        ")" => TokenKind::RIGHT_PAREN,
+        "," => TokenKind::COMMA,
+        ";" => TokenKind::SEMICOLON,
+        _ => unreachable!(),
+    };
+    let tok = Token {
+        kind,
+        origin: res,
+        code: input,
+    };
+    Ok((remain, tok))
 }
 fn keywords(input: &str) -> IResult<&str, Token> {
-    let (input, res) = alt((
+    let (remain, res) = alt((
         tag("def"),
         tag("extern"),
         tag("if"),
         tag("then"),
         tag("else"),
     ))(input)?;
-    Ok((input, {
-        match res {
-            "def" => Token::DEF,
-            "extern" => Token::EXTERN,
-            "if" => Token::IF,
-            "then" => Token::THEN,
-            "else" => Token::ELSE,
-            _ => unreachable!(),
-        }
-    }))
+    let kind = match res {
+        "def" => TokenKind::DEF,
+        "extern" => TokenKind::EXTERN,
+        "if" => TokenKind::IF,
+        "then" => TokenKind::THEN,
+        "else" => TokenKind::ELSE,
+        _ => unreachable!(),
+    };
+    let tok = Token {
+        kind,
+        origin: res,
+        code: input,
+    };
+    Ok((remain, tok))
 }
 
 fn comment(input: &str) -> IResult<&str, &str> {
@@ -250,9 +279,17 @@ fn comment(input: &str) -> IResult<&str, &str> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use core::str;
 
-    use super::*;
+    fn get_kind(tokens: &[Token]) -> String {
+        let mut res = vec![];
+        for t in tokens {
+            res.push(t.kind.clone());
+        }
+        format!("{:?}", res)
+    }
+
     #[test]
     fn test1() {
         let input = "# Compute the x'th fibonacci number.
@@ -265,7 +302,7 @@ def fib(x)
 # This expression will compute the 40th number.
 fib(40)";
         let (_, res) = tokenize(input).expect("cannot parse");
-        let res = format!("{:?}", res);
+        let res = get_kind(&res);
         let expected = br#"[DEF, IDENTIFIER("fib"), LEFT_PAREN, IDENTIFIER("x"), RIGHT_PAREN, IF, IDENTIFIER("x"), OPERATOR(LESS), NUMBER(3.0), THEN, NUMBER(1.0), ELSE, IDENTIFIER("fib"), LEFT_PAREN, IDENTIFIER("x"), OPERATOR(MINUS), NUMBER(1.0), RIGHT_PAREN, OPERATOR(PLUS), IDENTIFIER("fib"), LEFT_PAREN, IDENTIFIER("x"), OPERATOR(MINUS), NUMBER(2.0), RIGHT_PAREN, IDENTIFIER("fib"), LEFT_PAREN, NUMBER(40.0), RIGHT_PAREN]"#;
         let expected = str::from_utf8(expected).unwrap();
         assert_eq!(res, expected);
@@ -275,7 +312,7 @@ fib(40)";
     fn semicolon() {
         let input = "id;";
         let (_, res) = tokenize(input).expect("cannot parse");
-        let res = format!("{:?}", res);
+        let res = get_kind(&res);
         let expected = br#"[IDENTIFIER("id"), SEMICOLON]"#;
         let expected = str::from_utf8(expected).unwrap();
         assert_eq!(res, expected);

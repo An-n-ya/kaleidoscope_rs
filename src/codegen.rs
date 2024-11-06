@@ -18,28 +18,24 @@ use llvm_sys::core::LLVMCreateBuilderInContext;
 use llvm_sys::core::LLVMDeleteFunction;
 use llvm_sys::core::LLVMDoubleTypeInContext;
 use llvm_sys::core::LLVMFunctionType;
-use llvm_sys::core::LLVMGetElementType;
 use llvm_sys::core::LLVMGetFirstBasicBlock;
 use llvm_sys::core::LLVMGetFirstParam;
 use llvm_sys::core::LLVMGetNamedFunction;
 use llvm_sys::core::LLVMGetNextParam;
-use llvm_sys::core::LLVMGetReturnType;
 use llvm_sys::core::LLVMModuleCreateWithName;
+use llvm_sys::core::LLVMModuleCreateWithNameInContext;
 use llvm_sys::core::LLVMPositionBuilderAtEnd;
-use llvm_sys::core::LLVMPrintValueToString;
 use llvm_sys::core::LLVMSetValueName2;
-use llvm_sys::core::LLVMTypeOf;
 use llvm_sys::prelude::LLVMBuilderRef;
 use llvm_sys::prelude::LLVMContextRef;
 use llvm_sys::prelude::LLVMModuleRef;
 use llvm_sys::prelude::LLVMValueRef;
+use llvm_sys::target::LLVMSetModuleDataLayout;
 use llvm_sys::LLVMRealPredicate;
 
 use crate::ast::Expr;
 use crate::ast::Stmt;
 use crate::ast::Visitor;
-use crate::ast_dumper::llvm_type_to_string;
-use crate::ast_dumper::llvm_value_to_string;
 
 // TODO: refactor LLVM interface
 
@@ -55,8 +51,9 @@ impl CodeGen {
     pub fn new() -> Self {
         unsafe {
             let context = LLVMContextCreate();
-            let module_name = CString::new("module").unwrap();
-            let module = LLVMModuleCreateWithName(module_name.as_ptr());
+            let module_name = CString::new("Kaleidoscope").unwrap();
+            let module = LLVMModuleCreateWithNameInContext(module_name.as_ptr(), context);
+            // LLVMSetModuleDataLayout(module, R);
             let builder = LLVMCreateBuilderInContext(context);
             Self {
                 context,
@@ -101,7 +98,7 @@ impl Visitor<LLVMValueRef> for CodeGen {
                         args.push(arg.accept(self));
                     }
 
-                    // FIXME: cannot get type of callee_f, this is a workaround
+                    // FIXME: cannot acquire type of callee_f, this is a workaround
                     let double_type = LLVMDoubleTypeInContext(self.context);
                     let mut doubles = vec![double_type; expected_arg_count];
                     let function_type = LLVMFunctionType(
@@ -240,7 +237,6 @@ impl Visitor<LLVMValueRef> for CodeGen {
                         LLVMDeleteFunction(func);
                     }
                     LLVMBuildRet(self.builder, ret);
-                    // FIXME: Function context does not match Module context!
                     LLVMVerifyFunction(
                         func,
                         llvm_sys::analysis::LLVMVerifierFailureAction::LLVMPrintMessageAction,
@@ -259,12 +255,12 @@ mod tests {
 
     use super::*;
     #[test]
-    fn test1() {
+    fn test1() -> miette::Result<()> {
         let parser = Parser {};
         let input = "4 + 5;
 def foo(a,b) a + b;
 def boo(a) a < foo(a,2);";
-        let res = parser.parse(input);
+        let res = parser.parse(input)?;
         let code_gen = CodeGen::new();
         let dumped_stmts = res
             .iter()
@@ -289,5 +285,6 @@ entry:
 }\n",
         ];
         assert_eq!(dumped_stmts, expect);
+        Ok(())
     }
 }
