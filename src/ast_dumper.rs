@@ -1,18 +1,18 @@
 use std::ffi::CStr;
 
+use llvm_sys::core::LLVMPrintModuleToString;
 use llvm_sys::core::LLVMPrintTypeToString;
 use llvm_sys::core::LLVMPrintValueToString;
+use llvm_sys::prelude::LLVMModuleRef;
 use llvm_sys::prelude::LLVMTypeRef;
 use llvm_sys::prelude::LLVMValueRef;
 
 use crate::ast::Expr;
 use crate::ast::Stmt;
 use crate::ast::Visitor;
-use crate::codegen::CodeGen;
 
 pub enum DumperKind {
     AST,
-    LLVMIR(CodeGen),
 }
 
 pub struct AstDumper {
@@ -26,17 +26,22 @@ impl AstDumper {
     }
 }
 
+#[allow(unused)]
 pub fn llvm_type_to_string(v: LLVMTypeRef) -> String {
     let raw_str = unsafe { LLVMPrintTypeToString(v) };
-    if raw_str.is_null() {
-        return String::from("<error>");
-    }
-
-    let c_str = unsafe { CStr::from_ptr(raw_str) };
-    c_str.to_string_lossy().into_owned()
+    c_str_to_string(raw_str)
 }
+#[allow(unused)]
 pub fn llvm_value_to_string(v: LLVMValueRef) -> String {
     let raw_str = unsafe { LLVMPrintValueToString(v) };
+    c_str_to_string(raw_str)
+}
+pub fn llvm_module_to_string(v: LLVMModuleRef) -> String {
+    let raw_str = unsafe { LLVMPrintModuleToString(v) };
+    c_str_to_string(raw_str)
+}
+
+fn c_str_to_string(raw_str: *mut i8) -> String {
     if raw_str.is_null() {
         return String::from("<error>");
     }
@@ -66,10 +71,6 @@ impl Visitor<String> for AstDumper {
                     }
                 }
             },
-            DumperKind::LLVMIR(code_gen) => {
-                let v = expr.accept(code_gen);
-                res.push_str(&llvm_value_to_string(v));
-            }
         }
         if !res.ends_with('\n') {
             res.push('\n');
@@ -103,11 +104,12 @@ impl Visitor<String> for AstDumper {
                     res.push_str("ExprStmt\n");
                     res.push_str(&expr_stmt.expr.accept(self));
                 }
+                Stmt::Assign(assign) => {
+                    res.push_str("AssignStmt\n");
+                    res.push_str(&format!("{} = ", assign.name));
+                    res.push_str(&assign.expr.accept(self));
+                }
             },
-            DumperKind::LLVMIR(code_gen) => {
-                let v = stmt.accept(code_gen);
-                res.push_str(&llvm_value_to_string(v));
-            }
         }
         if !res.ends_with('\n') {
             res.push('\n');

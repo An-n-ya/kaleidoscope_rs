@@ -1,4 +1,4 @@
-use crate::{ast_dumper::AstDumper, codegen::CodeGen, token::Operator};
+use crate::{ast_dumper::AstDumper, token::Operator};
 
 #[derive(Debug)]
 pub enum Expr {
@@ -12,6 +12,7 @@ pub enum Stmt {
     Prototype(Prototype),
     Function(Function),
     Expr(ExprStmt),
+    Assign(AssignStmt),
 }
 
 pub trait Visitor<R> {
@@ -77,10 +78,15 @@ impl Call {
 pub struct Prototype {
     pub name: String,
     pub args: Vec<String>,
+    pub _extern: bool,
 }
 impl Prototype {
-    pub fn new(name: String, args: Vec<String>) -> Stmt {
-        Stmt::Prototype(Self { name, args })
+    pub fn new(name: String, args: Vec<String>, _extern: bool) -> Stmt {
+        Stmt::Prototype(Self {
+            name,
+            args,
+            _extern,
+        })
     }
 }
 
@@ -103,6 +109,16 @@ impl Function {
     }
 }
 #[derive(Debug)]
+pub struct AssignStmt {
+    pub name: String,
+    pub expr: Expr,
+}
+impl AssignStmt {
+    pub fn new(name: String, expr: Expr) -> Stmt {
+        Stmt::Assign(Self { name, expr })
+    }
+}
+#[derive(Debug)]
 pub struct ExprStmt {
     pub expr: Expr,
 }
@@ -112,13 +128,10 @@ impl ExprStmt {
     }
 }
 
+#[allow(unused)]
 impl Expr {
     pub fn dump(&self) -> String {
         let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::AST);
-        self.accept(&mut dumper)
-    }
-    pub fn dump_ir(&self, code_gen: CodeGen) -> String {
-        let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::LLVMIR(code_gen));
         self.accept(&mut dumper)
     }
 }
@@ -126,10 +139,6 @@ impl Expr {
 impl Stmt {
     pub fn dump(&self) -> String {
         let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::AST);
-        self.accept(&mut dumper)
-    }
-    pub fn dump_ir(&self, code_gen: CodeGen) -> String {
-        let mut dumper = AstDumper::new(crate::ast_dumper::DumperKind::LLVMIR(code_gen));
         self.accept(&mut dumper)
     }
 }

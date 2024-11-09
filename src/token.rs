@@ -3,7 +3,6 @@ use std::{
     ops::{Range, RangeFrom, RangeFull, RangeTo},
 };
 
-use miette::LabeledSpan;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -12,8 +11,7 @@ use nom::{
     multi::many0,
     number::complete::double,
     sequence::{delimited, pair},
-    Err::Error,
-    Finish, IResult, InputIter, InputLength, InputTake, Needed, Offset, Slice,
+    IResult, InputIter, InputLength, InputTake, Needed, Offset, Slice,
 };
 #[derive(PartialEq, Debug, Clone)]
 pub struct Token<'a> {
@@ -22,21 +20,23 @@ pub struct Token<'a> {
     pub code: &'a str,
 }
 
+#[allow(non_camel_case_types)]
 #[derive(PartialEq, Debug, Clone)]
 pub enum TokenKind<'a> {
-    EOF,
+    ASSIGN,
+    COMMA,
     DEF,
+    ELSE,
+    EOF,
     EXTERN,
     IDENTIFIER(&'a str),
-    NUMBER(f64),
-    LEFT_PAREN,
-    RIGHT_PAREN,
-    COMMA,
-    SEMICOLON,
-    OPERATOR(Operator),
     IF,
+    LEFT_PAREN,
+    NUMBER(f64),
+    OPERATOR(Operator),
+    RIGHT_PAREN,
+    SEMICOLON,
     THEN,
-    ELSE,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -230,6 +230,7 @@ fn symbol(input: &str) -> IResult<&str, Token> {
         tag(")"),
         tag(","),
         tag(";"),
+        tag("="),
     ))(input)?;
     let kind = match res {
         "<" => TokenKind::OPERATOR(Operator::LESS),
@@ -240,6 +241,7 @@ fn symbol(input: &str) -> IResult<&str, Token> {
         ")" => TokenKind::RIGHT_PAREN,
         "," => TokenKind::COMMA,
         ";" => TokenKind::SEMICOLON,
+        "=" => TokenKind::ASSIGN,
         _ => unreachable!(),
     };
     let tok = Token {

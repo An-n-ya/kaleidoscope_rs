@@ -1,16 +1,15 @@
-use miette::bail;
 use nom::{
     branch::alt,
     bytes::complete::take,
     combinator::{map, opt, verify},
-    error::{Error, ErrorKind},
+    error::ErrorKind,
     multi::many0,
     sequence::{pair, tuple},
     Err, Finish, IResult, Offset,
 };
 
 use crate::{
-    ast::{Binary, Call, Expr, ExprStmt, Function, Number, Prototype, Stmt, Variable},
+    ast::{AssignStmt, Binary, Call, Expr, ExprStmt, Function, Number, Prototype, Stmt, Variable},
     token::{tokenize, Operator, Token, TokenKind, Tokens},
 };
 
@@ -88,6 +87,7 @@ impl<'a> nom::error::ParseError<Tokens<'a>> for ParserError<'a> {
 
 macro_rules! tag_token {
     ($func_name: ident, $tag: expr) => {
+        #[allow(unused)]
         fn $func_name(tokens: Tokens) -> IResult<Tokens, Tokens, ParserError> {
             verify(take(1usize), |t: &Tokens| t.tok[0].kind == $tag)(tokens)
                 .finish()
@@ -101,24 +101,30 @@ macro_rules! tag_token {
     };
 }
 
-tag_token!(def_tag, TokenKind::DEF);
-tag_token!(left_paren_tag, TokenKind::LEFT_PAREN);
-tag_token!(right_paren_tag, TokenKind::RIGHT_PAREN);
+tag_token!(assign_tag, TokenKind::ASSIGN);
 tag_token!(comma_tag, TokenKind::COMMA);
+tag_token!(def_tag, TokenKind::DEF);
+tag_token!(else_tag, TokenKind::ELSE);
+tag_token!(eof_tag, TokenKind::EOF);
 tag_token!(extern_tag, TokenKind::EXTERN);
 tag_token!(if_tag, TokenKind::IF);
-tag_token!(then_tag, TokenKind::THEN);
-tag_token!(else_tag, TokenKind::ELSE);
+tag_token!(left_paren_tag, TokenKind::LEFT_PAREN);
+tag_token!(right_paren_tag, TokenKind::RIGHT_PAREN);
 tag_token!(semicolon_tag, TokenKind::SEMICOLON);
-tag_token!(eof_tag, TokenKind::EOF);
+tag_token!(then_tag, TokenKind::THEN);
 
 fn parse_program(tokens: Tokens) -> IResult<Tokens, Vec<Stmt>, ParserError> {
     map(pair(many0(statement), eof_tag), |(ret, _)| ret)(tokens)
 }
 
-/// top ::= definition | external | expression | ';'
+/// statement ::= definition | external | expression | assign
 fn statement(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
-    alt((function_definition, extern_stmt, expression_stmt))(tokens)
+    alt((
+        function_definition,
+        extern_stmt,
+        assign_stmt,
+        expression_stmt,
+    ))(tokens)
 }
 
 /// primary
@@ -200,6 +206,7 @@ fn identifier_expr(tokens: Tokens) -> IResult<Tokens, Expr, ParserError> {
     ))(tokens)
 }
 
+/// pxpression ::= expr ";"
 fn expression_stmt<'a>(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
     map(pair(expression, semicolon_tag), |(expr, _)| {
         ExprStmt::new(expr)
@@ -239,7 +246,7 @@ fn binary_op_rhs(
 
 /// prototype
 ///   ::= id '(' id* ')'
-fn prototype(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
+fn prototype(tokens: Tokens, _extern: bool) -> IResult<Tokens, Stmt, ParserError> {
     fn expr_with_comma(tokens: Tokens) -> IResult<Tokens, String, ParserError> {
         map(pair(identifier, comma_tag), |(expr, _)| expr)(tokens)
     }
@@ -256,20 +263,20 @@ fn prototype(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
 
     map(
         tuple((identifier, left_paren_tag, args, right_paren_tag)),
-        |(callee, _, args, _)| Prototype::new(callee, args),
+        |(callee, _, args, _)| Prototype::new(callee, args, _extern),
     )(tokens)
 }
 
 /// definition ::= 'def' prototype expression
 fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
     let (tokens, _) = def_tag(tokens)?;
-    let (tokens, proto) = prototype(tokens).finish().map_err(|_e| {
+    let (tokens, proto) = prototype(tokens, false).finish().map_err(|_e| {
         Err::Failure(ParserError::new(
             tokens,
             ParserErrorKind::Expect("PROTOTYPE".to_string()),
         ))
     })?;
-    let (tokens, expr) = expression(tokens).finish().map_err(|e| {
+    let (tokens, expr) = expression(tokens).finish().map_err(|_e| {
         Err::Failure(ParserError::new(
             tokens,
             ParserErrorKind::Expect("EXPRESSION".to_string()),
@@ -281,10 +288,29 @@ fn function_definition(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
     Ok((tokens, Function::new(proto, expr)))
 }
 
+/// assign ::= identifier '=' expression ';'
+fn assign_stmt(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
+    let origin_tokens = tokens;
+    let (tokens, ident) = identifier(tokens)?;
+    let (tokens, _) = assign_tag(tokens)
+        .finish()
+        .map_err(|_e| Err::Error(ParserError::new(origin_tokens, ParserErrorKind::Default)))?;
+    let (tokens, expr) = expression(tokens).finish().map_err(|_e| {
+        Err::Failure(ParserError::new(
+            tokens,
+            ParserErrorKind::Expect("ASSIGN".to_string()),
+        ))
+    })?;
+    let (tokens, _) = semicolon_tag(tokens)
+        .finish()
+        .map_err(|e| Err::Failure(e))?;
+    Ok((tokens, AssignStmt::new(ident, expr)))
+}
+
 /// external ::= 'extern' prototype
 fn extern_stmt(tokens: Tokens) -> IResult<Tokens, Stmt, ParserError> {
     let (tokens, _) = extern_tag(tokens)?;
-    let (tokens, proto) = prototype(tokens).finish().map_err(|_e| {
+    let (tokens, proto) = prototype(tokens, true).finish().map_err(|_e| {
         Err::Failure(ParserError::new(
             tokens,
             ParserErrorKind::Expect("PROTOTYPE".to_string()),
